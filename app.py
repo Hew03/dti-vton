@@ -1,84 +1,84 @@
-from flask import Flask, request, render_template
-import os
-import base64
-import uuid
+from aiohttp import web
+from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack
 import cv2
 import numpy as np
-from flask_socketio import SocketIO
+import uuid
+import json
+import os
+from av import VideoFrame
 
-app = Flask(__name__)
-socketio = SocketIO(app, async_mode='eventlet')
-UPLOAD_FOLDER = 'uploads'
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app = web.Application()
+pcs = set()  # Track active peer connections
 
-# Store WebRTC connections
-connections = {}
+# ML Processing (Replace with your model)
+class MLProcessor:
+    def process(self, frame):
+        """Example: Flip frame + placeholder for ML"""
+        processed = cv2.flip(frame, 1)
+        # Add your ML processing here
+        return processed
 
-@app.route('/')
-def index():
-    return render_template('index.html')
+ml_model = MLProcessor()
 
-@socketio.on('connect')
-def handle_connect():
-    print('Client connected:', request.sid)
+class MLVideoTrack(VideoStreamTrack):
+    def __init__(self, track):
+        super().__init__()
+        self.track = track
 
-@socketio.on('disconnect')
-def handle_disconnect():
-    print('Client disconnected:', request.sid)
-    if request.sid in connections:
-        del connections[request.sid]
-
-@socketio.on('offer')
-def handle_offer(data):
-    connections[request.sid] = data['offer']
-    socketio.emit('offer', {'offer': data['offer']}, room=request.sid)
-
-@socketio.on('answer')
-def handle_answer(data):
-    connections[request.sid] = data['answer']
-    socketio.emit('answer', {'answer': data['answer']}, room=request.sid)
-
-@socketio.on('ice_candidate')
-def handle_ice_candidate(data):
-    socketio.emit('ice_candidate', {'candidate': data['candidate']}, room=request.sid)
-
-@socketio.on('process_frame')
-def handle_process_frame(data):
-    try:
-        # Decode base64 image
-        img_data = base64.b64decode(data['frame'].split(',')[1])
-        nparr = np.frombuffer(img_data, np.uint8)
-        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    async def recv(self):
+        frame = await self.track.recv()
+        img = frame.to_ndarray(format="bgr24")
         
-        # Flip the frame horizontally (mirror effect)
-        flipped_frame = cv2.flip(frame, 1)
+        # Process frame with ML
+        processed_img = ml_model.process(img)
         
-        # Encode back to base64
-        _, buffer = cv2.imencode('.jpg', flipped_frame)
-        flipped_frame_data = base64.b64encode(buffer).decode('utf-8')
-        
-        socketio.emit('processed_frame', {
-            'frame': f'data:image/jpeg;base64,{flipped_frame_data}',
-            'timestamp': data['timestamp']
-        }, room=request.sid)
-    except Exception as e:
-        print('Error processing frame:', e)
+        new_frame = VideoFrame.from_ndarray(processed_img, format="bgr24")
+        new_frame.pts = frame.pts
+        return new_frame
 
-@socketio.on('upload_garment')
-def handle_garment_upload(data):
-    try:
-        # Decode base64 image
-        img_data = base64.b64decode(data['image'].split(',')[1])
-        filename = f"garment_{uuid.uuid4()}.jpg"
-        filepath = os.path.join(UPLOAD_FOLDER, filename)
-        
-        with open(filepath, 'wb') as f:
-            f.write(img_data)
-        
-        socketio.emit('garment_uploaded', {'path': filepath}, room=request.sid)
-    except Exception as e:
-        print('Error processing garment:', e)
-        socketio.emit('upload_error', {'error': str(e)}, room=request.sid)
+async def offer(request):
+    params = await request.json()
+    offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
 
-if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+    pc = RTCPeerConnection()
+    pcs.add(pc)
+
+    @pc.on("iceconnectionstatechange")
+    async def on_iceconnectionstatechange():
+        if pc.iceConnectionState == "failed":
+            await pc.close()
+            pcs.discard(pc)
+
+    # Add ML track when client sends video
+    @pc.on("track")
+    def on_track(track):
+        if track.kind == "video":
+            ml_track = MLVideoTrack(track)
+            pc.addTrack(ml_track)
+
+    await pc.setRemoteDescription(offer)
+    answer = await pc.createAnswer()
+    await pc.setLocalDescription(answer)
+
+    return web.Response(
+        content_type="application/json",
+        text=json.dumps({
+            "sdp": pc.localDescription.sdp,
+            "type": pc.localDescription.type
+        }),
+    )
+
+async def index(request):
+    return web.FileResponse('./templates/index.html')
+
+async def on_shutdown(app):
+    for pc in pcs:
+        await pc.close()
+
+app.router.add_get("/", index)
+app.router.add_post("/offer", offer)
+app.router.add_static("/static/", path="./static", name="static")
+app.on_shutdown.append(on_shutdown)
+
+if __name__ == "__main__":
+    web.run_app(app, port=8080)
