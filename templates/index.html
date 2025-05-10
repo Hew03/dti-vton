@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Real-Time ML Processing</title>
+    <title>Real-Time Clothing ML Processing</title>
     <style>
         body { 
             font-family: Arial, sans-serif; 
@@ -71,19 +71,16 @@
         .hidden {
             display: none;
         }
-        button {
-            padding: 10px 15px;
-            background: #4CAF50;
+        #processing-indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.7);
             color: white;
-            border: none;
+            padding: 10px 20px;
             border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-            margin-top: 10px;
-        }
-        button:disabled {
-            background: #cccccc;
-            cursor: not-allowed;
+            display: none;
         }
         input[type="file"] {
             margin: 10px 0;
@@ -91,13 +88,14 @@
     </style>
 </head>
 <body>
-    <h1>Real-Time ML Processing</h1>
+    <h1>Real-Time Clothing ML Processing</h1>
     <div id="status" class="pending">Initializing...</div>
+    <div id="processing-indicator">Processing...</div>
 
     <!-- Image Upload Section -->
     <div id="image-upload-section">
         <h2>Upload Clothing Image</h2>
-        <p>Upload an image to be processed and used in the video feed</p>
+        <p>Upload an image of clothing to see real-time try-on effects in the video feed</p>
         
         <input type="file" id="image-upload" accept="image/*">
         <div class="image-preview-container">
@@ -114,8 +112,6 @@
                 <p class="preview-info">Processed Image</p>
             </div>
         </div>
-        <button id="process-image" disabled>Process Image</button>
-        <button id="apply-to-video" disabled>Apply to Video Feed</button>
     </div>
 
     <!-- Video Feeds Section -->
