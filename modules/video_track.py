@@ -19,6 +19,11 @@ class ClothesVideoTrack(VideoStreamTrack):
             
             processed_img = self.processor.process_video_frame(img)
             
+            if processed_img is None:
+                if self._last_frame:
+                    return self._last_frame
+                return frame
+    
             new_frame = VideoFrame.from_ndarray(processed_img, format="bgr24")
             new_frame.pts = frame.pts
             new_frame.time_base = frame.time_base
