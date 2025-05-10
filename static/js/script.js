@@ -6,16 +6,58 @@ document.addEventListener('DOMContentLoaded', function() {
     const originalPreview = document.getElementById('original-preview');
     const processedPreview = document.getElementById('processed-preview');
     const processingIndicator = document.getElementById('processing-indicator');
+    const fileUpload = document.querySelector('.file-upload');
 
     let pc;
     let webcamStream;
     let originalImage = null;
     let videoStarted = false;
 
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        fileUpload.addEventListener(eventName, preventDefaults, false);
+    });
+    
+    function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    
+    ['dragenter', 'dragover'].forEach(eventName => {
+        fileUpload.addEventListener(eventName, highlight, false);
+    });
+    
+    ['dragleave', 'drop'].forEach(eventName => {
+        fileUpload.addEventListener(eventName, unhighlight, false);
+    });
+    
+    function highlight() {
+        fileUpload.style.borderColor = 'var(--primary-color)';
+        fileUpload.style.backgroundColor = 'rgba(67, 97, 238, 0.05)';
+    }
+    
+    function unhighlight() {
+        fileUpload.style.borderColor = '#e2e8f0';
+        fileUpload.style.backgroundColor = '#f8fafc';
+    }
+    
+    fileUpload.addEventListener('drop', handleDrop, false);
+    
+    function handleDrop(e) {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        if (files.length) {
+            imageUploadInput.files = files;
+            handleFileSelect(files[0]);
+        }
+    }
+
     imageUploadInput.addEventListener('change', function(e) {
         const file = e.target.files[0];
         if (!file) return;
-        
+        handleFileSelect(file);
+    });
+    
+    function handleFileSelect(file) {
         showProcessingIndicator();
         statusDiv.textContent = "Processing clothing image...";
         statusDiv.className = "pending";
@@ -28,7 +70,7 @@ document.addEventListener('DOMContentLoaded', function() {
             processClothingImage(originalImage);
         };
         reader.readAsDataURL(file);
-    });
+    }
 
     async function processClothingImage(imageData) {
         try {
@@ -48,8 +90,7 @@ document.addEventListener('DOMContentLoaded', function() {
             
             processedPreview.innerHTML = `<img src="${result.processedImage}" alt="Processed Clothing">`;
             
-            statusDiv.textContent = "Image processed successfully";
-            statusDiv.className = "connected";
+            updateStatus("Image processed successfully", "connected");
             
             if (!videoStarted) {
                 await startVideoProcessing();
@@ -58,8 +99,7 @@ document.addEventListener('DOMContentLoaded', function() {
             hideProcessingIndicator();
         } catch (err) {
             processedPreview.innerHTML = '<span>Processing failed</span>';
-            statusDiv.textContent = `Error: ${err.message}`;
-            statusDiv.className = "disconnected";
+            updateStatus(`Error: ${err.message}`, "disconnected");
             console.error(err);
             hideProcessingIndicator();
         }
@@ -78,11 +118,9 @@ document.addEventListener('DOMContentLoaded', function() {
             await setupWebRTC();
             
             videoStarted = true;
-            statusDiv.textContent = "Video processing started";
-            statusDiv.className = "connected";
+            updateStatus("Video processing started", "connected");
         } catch (err) {
-            statusDiv.textContent = `Error starting video: ${err.message}`;
-            statusDiv.className = "disconnected";
+            updateStatus(`Error starting video: ${err.message}`, "disconnected");
             console.error(err);
         }
     }
@@ -95,11 +133,9 @@ document.addEventListener('DOMContentLoaded', function() {
         pc.oniceconnectionstatechange = () => {
             console.log("ICE connection state:", pc.iceConnectionState);
             if (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed") {
-                statusDiv.textContent = "Connected to video processing";
-                statusDiv.className = "connected";
+                updateStatus("Connected to video processing", "connected");
             } else if (pc.iceConnectionState === "failed" || pc.iceConnectionState === "disconnected") {
-                statusDiv.textContent = "Video connection failed";
-                statusDiv.className = "disconnected";
+                updateStatus("Video connection failed", "disconnected");
             }
         };
         
@@ -143,17 +179,26 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log("Set remote description");
         } catch (err) {
             console.error("WebRTC setup error:", err);
-            statusDiv.textContent = `Setup error: ${err.message}`;
-            statusDiv.className = "disconnected";
+            updateStatus(`Setup error: ${err.message}`, "disconnected");
         }
     }
 
     function showProcessingIndicator() {
-        processingIndicator.style.display = 'block';
+        processingIndicator.style.display = 'flex';
     }
 
     function hideProcessingIndicator() {
         processingIndicator.style.display = 'none';
+    }
+    
+    function updateStatus(message, className) {
+        statusDiv.textContent = message;
+        statusDiv.className = className;
+        
+        statusDiv.style.transform = 'scale(1.05)';
+        setTimeout(() => {
+            statusDiv.style.transform = 'scale(1)';
+        }, 300);
     }
 
     window.addEventListener('beforeunload', () => {

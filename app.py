@@ -22,7 +22,7 @@ def init_app():
     setup_routes(app, pcs, ml_model, UPLOAD_DIR)
     
     app.router.add_static("/static/", path="./static", name="static")
-
+    
     app.on_shutdown.append(on_shutdown)
     
     return app
