@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Virtual Try-On</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <h1>Virtual Real-Time Try-On</h1>
+  <div class="container">
+    <div class="video-area">
+      <div class="feed">
+        <p>Original Feed</p>
+        <video id="video" autoplay playsinline width="320" height="240"></video>
+      </div>
+      <div class="feed">
+        <p>Processed Feed</p>
+        <canvas id="canvas" width="320" height="240"></canvas>
+      </div>
+    </div>
+    <div class="upload-area">
+      <div id="controls">
+        <input type="file" id="upload" accept="image/*" />
+      </div>
+      <div class="preview">
+        <p>Uploaded Garment Preview:</p>
+        <img id="garment-preview" src="" alt="Garment Preview" />
+      </div>
+    </div>
+  </div>
+  
+  <script src="/static/js/script.js"></script>
+</body>
+</html>
