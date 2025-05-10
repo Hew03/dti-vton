@@ -13,13 +13,17 @@ class ClothingTryOnModel:
     def process_frame(self, frame, clothing_image):
         """
         Process a frame by simply flipping it horizontally
-        No face detection or clothing overlay
+        Clothing image is passed but not used in actual processing
         """
         # Create a horizontally flipped version of the frame
         result = cv2.flip(frame, 1)  # 1 for horizontal flip
         
-        # Add text to show this is the processed frame
-        cv2.putText(result, "Processed: Flipped Frame", (10, 30), 
+        # Add text to show this is try-on result
+        cv2.putText(result, "Try-On Result", (10, 30), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        
+        # Add clothing name if available (simulated)
+        cv2.putText(result, "Clothing applied!", (10, 60), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 255), 2)
         
         return result

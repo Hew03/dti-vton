@@ -15,6 +15,7 @@ class ClothingProcessor:
         self.original_frame = None
         self.processing_thread = None
         self.running = False
+        self.clothing_loaded = False  # Flag to track if clothing has been loaded
     
     def start_camera(self, camera_index=0):
         """Start the webcam capture"""
@@ -35,11 +36,12 @@ class ClothingProcessor:
             self.capture.release()
             
     def set_clothing(self, clothing_path):
-        """Set the clothing image (kept for compatibility but not used)"""
+        """Set the clothing image and mark as loaded"""
         try:
             clothing_img = cv2.imread(clothing_path)
             if clothing_img is not None:
                 self.clothing_image = clothing_img
+                self.clothing_loaded = True  # Mark that clothing is loaded
                 return True
             return False
         except Exception as e:
@@ -60,8 +62,11 @@ class ClothingProcessor:
             # Store the original frame
             self.original_frame = frame.copy()
             
-            # Process the frame - clothing image is passed but not used
-            dummy_clothing = np.zeros((1, 1, 3), dtype=np.uint8)
-            self.processed_frame = self.model.process_frame(frame, dummy_clothing)
+            # Process the frame only if clothing is loaded
+            if self.clothing_loaded:
+                self.processed_frame = self.model.process_frame(frame, self.clothing_image)
+            else:
+                # If no clothing loaded yet, processed frame is same as original
+                self.processed_frame = frame.copy()
                 
             time.sleep(0.01)  # Small sleep to prevent CPU overuse
