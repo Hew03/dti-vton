@@ -1,51 +1,84 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, render_template
 import os
+import base64
+import uuid
 import cv2
 import numpy as np
-import time
-import base64
+from flask_socketio import SocketIO
 
 app = Flask(__name__)
+socketio = SocketIO(app, async_mode='eventlet')
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# TODO: Load or configure your model here (local or Vertex AI)
-# e.g. model = load_local_model()
+# Store WebRTC connections
+connections = {}
 
 @app.route('/')
 def index():
     return render_template('index.html')
 
-@app.route('/upload', methods=['POST'])
-def upload():
-    file = request.files.get('garment')
-    if not file:
-        return jsonify({'error': 'No file provided'}), 400
-    filepath = os.path.join(UPLOAD_FOLDER, file.filename)
-    file.save(filepath)
-    return jsonify({'status': 'ok', 'path': filepath})
+@socketio.on('connect')
+def handle_connect():
+    print('Client connected:', request.sid)
 
-@app.route('/process_frame', methods=['POST'])
-def process_frame():
-    # Simulate backend processing delay
-    time.sleep(0.15)  # ~150ms per frame
+@socketio.on('disconnect')
+def handle_disconnect():
+    print('Client disconnected:', request.sid)
+    if request.sid in connections:
+        del connections[request.sid]
 
-    # Receive base64 frame and garment path
-    data = request.get_json()
-    frame_b64 = data.get('frame', '')
-    garment_path = data.get('garment_path')
+@socketio.on('offer')
+def handle_offer(data):
+    connections[request.sid] = data['offer']
+    socketio.emit('offer', {'offer': data['offer']}, room=request.sid)
 
-    # Decode frame
-    img_data = base64.b64decode(frame_b64)
-    img_array = np.frombuffer(img_data, np.uint8)
-    frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+@socketio.on('answer')
+def handle_answer(data):
+    connections[request.sid] = data['answer']
+    socketio.emit('answer', {'answer': data['answer']}, room=request.sid)
 
-    # TODO: Call your model here; for now, simulate a simple processing (e.g., flip horizontally)
-    processed = cv2.flip(frame, 1)
+@socketio.on('ice_candidate')
+def handle_ice_candidate(data):
+    socketio.emit('ice_candidate', {'candidate': data['candidate']}, room=request.sid)
 
-    # Encode back to JPEG
-    _, jpeg = cv2.imencode('.jpg', processed)
-    return jsonify({'frame': base64.b64encode(jpeg.tobytes()).decode('utf-8')})
+@socketio.on('process_frame')
+def handle_process_frame(data):
+    try:
+        # Decode base64 image
+        img_data = base64.b64decode(data['frame'].split(',')[1])
+        nparr = np.frombuffer(img_data, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        # Flip the frame horizontally (mirror effect)
+        flipped_frame = cv2.flip(frame, 1)
+        
+        # Encode back to base64
+        _, buffer = cv2.imencode('.jpg', flipped_frame)
+        flipped_frame_data = base64.b64encode(buffer).decode('utf-8')
+        
+        socketio.emit('processed_frame', {
+            'frame': f'data:image/jpeg;base64,{flipped_frame_data}',
+            'timestamp': data['timestamp']
+        }, room=request.sid)
+    except Exception as e:
+        print('Error processing frame:', e)
+
+@socketio.on('upload_garment')
+def handle_garment_upload(data):
+    try:
+        # Decode base64 image
+        img_data = base64.b64decode(data['image'].split(',')[1])
+        filename = f"garment_{uuid.uuid4()}.jpg"
+        filepath = os.path.join(UPLOAD_FOLDER, filename)
+        
+        with open(filepath, 'wb') as f:
+            f.write(img_data)
+        
+        socketio.emit('garment_uploaded', {'path': filepath}, room=request.sid)
+    except Exception as e:
+        print('Error processing garment:', e)
+        socketio.emit('upload_error', {'error': str(e)}, room=request.sid)
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True)

@@ -1,35 +1,82 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Virtual Try-On</title>
-  <link rel="stylesheet" href="/static/css/style.css">
+    <title>Dual Video Feed Processing</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        #video { display: none; }
+        #container { 
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .video-container {
+            border: 1px solid #ccc;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .video-container h2 {
+            margin-top: 0;
+        }
+        canvas {
+            background: #000;
+        }
+        #status {
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+        }
+        .connected { background: #cfc; }
+        .disconnected { background: #fcc; }
+        #stats {
+            margin-top: 10px;
+            font-family: monospace;
+            display: flex;
+            gap: 20px;
+        }
+        #upload-section {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        #garment-preview {
+            max-width: 300px;
+            margin-top: 10px;
+            display: none;
+        }
+    </style>
 </head>
 <body>
-  <h1>Virtual Real-Time Try-On</h1>
-  <div class="container">
-    <div class="video-area">
-      <div class="feed">
-        <p>Original Feed</p>
-        <video id="video" autoplay playsinline width="320" height="240"></video>
-      </div>
-      <div class="feed">
-        <p>Processed Feed</p>
-        <canvas id="canvas" width="320" height="240"></canvas>
-      </div>
+    <h1>Dual Video Feed Processing</h1>
+    <div id="status">Connecting...</div>
+    
+    <div id="container">
+        <div class="video-container">
+            <h2>Local Webcam Feed</h2>
+            <canvas id="local-canvas"></canvas>
+        </div>
+        <div class="video-container">
+            <h2>Server-Processed Feed</h2>
+            <canvas id="processed-canvas"></canvas>
+        </div>
     </div>
-    <div class="upload-area">
-      <div id="controls">
-        <input type="file" id="upload" accept="image/*" />
-      </div>
-      <div class="preview">
-        <p>Uploaded Garment Preview:</p>
-        <img id="garment-preview" src="" alt="Garment Preview" />
-      </div>
+    
+    <div id="stats">
+        <div id="local-fps">Local FPS: 0</div>
+        <div id="remote-fps">Processed FPS: 0</div>
     </div>
-  </div>
-  
-  <script src="/static/js/script.js"></script>
+
+    <div id="upload-section">
+        <h3>Upload Garment</h3>
+        <input type="file" id="upload" accept="image/*">
+        <img id="garment-preview">
+    </div>
+
+    <video id="video" autoplay playsinline></video>
+    
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="/static/js/script.js"></script>
 </body>
 </html>
