@@ -29,14 +29,30 @@ class MLProcessor:
         return True
     
     def process_single_image(self, image):
-        processed = cv2.flip(image, 1)
+        cv2.putText(
+            image, 
+            "Processed", 
+            (20, 40), 
+            cv2.FONT_HERSHEY_SIMPLEX, 
+            1, 
+            (0, 255, 0), 
+            2
+        )
                
-        return processed
+        return image
     
     def process_video_frame(self, frame):
-        processed = cv2.flip(frame, 1)
+        cv2.putText(
+            frame, 
+            "Processed", 
+            (20, 40), 
+            cv2.FONT_HERSHEY_SIMPLEX, 
+            1, 
+            (0, 255, 0), 
+            2
+        )
                
-        return processed
+        return frame
 
 ml_model = MLProcessor()
 
