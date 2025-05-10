@@ -1,9 +1,105 @@
 const webcamVideo = document.getElementById('webcam');
 const processedVideo = document.getElementById('processed');
 const statusDiv = document.getElementById('status');
+const imageUploadInput = document.getElementById('image-upload');
+const originalPreview = document.getElementById('original-preview');
+const processedPreview = document.getElementById('processed-preview');
+const processImageBtn = document.getElementById('process-image');
+const applyToVideoBtn = document.getElementById('apply-to-video');
 
 let pc;
 let webcamStream;
+let originalImage = null;
+let processedImage = null;
+let videoEnabled = false;
+
+// Handle image upload
+imageUploadInput.addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    // Display original image preview
+    const reader = new FileReader();
+    reader.onload = function(event) {
+        originalImage = event.target.result;
+        originalPreview.innerHTML = `<img src="${originalImage}" alt="Original Image">`;
+        processImageBtn.disabled = false;
+    };
+    reader.readAsDataURL(file);
+});
+
+// Process the uploaded image
+processImageBtn.addEventListener('click', async function() {
+    if (!originalImage) return;
+    
+    // Show loading state
+    processedPreview.innerHTML = '<span>Processing...</span>';
+    
+    try {
+        // Send image to server for processing
+        const response = await fetch('/process-image', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ image: originalImage })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Server error: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        processedImage = result.processedImage;
+        
+        // Display processed image
+        processedPreview.innerHTML = `<img src="${processedImage}" alt="Processed Image">`;
+        applyToVideoBtn.disabled = false;
+        
+        statusDiv.textContent = "Image processed successfully";
+        statusDiv.className = "connected";
+    } catch (err) {
+        processedPreview.innerHTML = '<span>Processing failed</span>';
+        statusDiv.textContent = `Error: ${err.message}`;
+        statusDiv.className = "disconnected";
+        console.error(err);
+    }
+});
+
+// Apply to video feed
+applyToVideoBtn.addEventListener('click', async function() {
+    if (!processedImage) return;
+    
+    // Enable video processing
+    videoEnabled = true;
+    
+    // Tell the server to use this image for video processing
+    try {
+        const response = await fetch('/set-reference-image', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ image: originalImage })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Server error: ${response.status}`);
+        }
+        
+        // Start webcam if not already started
+        if (!webcamStream) {
+            await start();
+        }
+        
+        statusDiv.textContent = "Applied to video feed";
+        statusDiv.className = "connected";
+    } catch (err) {
+        statusDiv.textContent = `Error: ${err.message}`;
+        statusDiv.className = "disconnected";
+        console.error(err);
+    }
+});
 
 async function start() {
     try {
@@ -18,6 +114,7 @@ async function start() {
         await setupWebRTC();
         
         statusDiv.textContent = "Connecting...";
+        statusDiv.className = "pending";
     } catch (err) {
         statusDiv.textContent = `Error: ${err.message}`;
         statusDiv.className = "disconnected";
@@ -73,7 +170,8 @@ async function setupWebRTC() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 sdp: pc.localDescription.sdp,
-                type: pc.localDescription.type
+                type: pc.localDescription.type,
+                videoEnabled: videoEnabled
             })
         });
 
@@ -91,9 +189,6 @@ async function setupWebRTC() {
         statusDiv.className = "disconnected";
     }
 }
-
-// Start application
-start();
 
 // Cleanup on exit
 window.addEventListener('beforeunload', () => {
