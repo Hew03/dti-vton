@@ -1,54 +1,48 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Virtual Clothing Try-On</title>
-  <link rel="stylesheet" href="styles.css">
-</head>
-<body>
-  <div class="app-container">
-    <header>
-      <h1>Virtual Clothing Try-On</h1>
-      <div id="status" class="status status-ready">Ready</div>
-    </header>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Virtual Clothing Try-On</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-container">
+      <header>
+        <h1>Virtual Clothing Try-On</h1>
+        <div id="status" class="status status-ready">Ready</div>
+      </header>
 
-    <div class="main-content">
-      <div class="control-panel">
-        <div class="upload-section">
-          <h2>Clothing Selection</h2>
-          <input type="file" id="clothing-upload" accept="image/*">
-          <div id="clothing-preview" class="image-preview">
-            <span>No clothing selected</span>
+      <div class="main-content">
+        <div class="control-panel">
+          <div class="upload-section">
+            <h2>Clothing Selection</h2>
+            <input type="file" id="clothing-upload" accept="image/*" />
+            <div id="clothing-preview" class="image-preview">
+              <span>No clothing selected</span>
+            </div>
+          </div>
+
+          <div class="controls-section">
+            <h2>Controls</h2>
+            <button id="try-on-btn" disabled>Apply Try-On</button>
+            <button id="reset-btn">Reset</button>
           </div>
         </div>
 
-        <div class="controls-section">
-          <h2>Controls</h2>
-          <button id="try-on-btn" disabled>Apply Try-On</button>
-          <button id="reset-btn">Reset</button>
-          <div class="debug-info">
-            <label>
-              <input type="checkbox" id="show-debug" /> Show Debug Info
-            </label>
-            <div id="debug-output" class="debug-output hidden"></div>
+        <div class="video-panel">
+          <h2>Live Preview</h2>
+          <div class="video-container">
+            <video id="camera-feed" autoplay playsinline></video>
+            <canvas id="output-canvas"></canvas>
+            <div id="loading-overlay">Loading models...</div>
           </div>
-        </div>
-      </div>
-
-      <div class="video-panel">
-        <h2>Live Preview</h2>
-        <div class="video-container">
-          <video id="camera-feed" autoplay playsinline></video>
-          <canvas id="output-canvas"></canvas>
-          <div id="loading-overlay">Loading models...</div>
         </div>
       </div>
     </div>
-  </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.18.0"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-pix@2.0.0"></script>
-  <script src="app.js"></script>
-</body>
-</html> 
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.18.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-pix@2.0.0"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

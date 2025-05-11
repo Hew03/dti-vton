@@ -38,8 +38,9 @@ class VirtualTryOn {
       this.net = await bodyPix.load({
         architecture: "MobileNetV1",
         outputStride: 16,
+        multiplier: 1,
         quantBytes: 2,
-        internalResolution: "medium",
+        internalResolution: "low",
       });
 
       // Start camera
@@ -70,10 +71,10 @@ class VirtualTryOn {
   isVideoReady() {
     return (
       this.cameraReady &&
-      this.videoElement.videoWidth > 0 &&
-      this.videoElement.videoHeight > 0 &&
-      this.outputCanvas.width > 0 &&
-      this.outputCanvas.height > 0
+      this.videoElement.videoWidth > 10 && // Minimum 10px to prevent zero dimensions
+      this.videoElement.videoHeight > 10 &&
+      this.outputCanvas.width === this.videoElement.videoWidth && // Exact match required
+      this.outputCanvas.height === this.videoElement.videoHeight
     );
   }
 
@@ -101,11 +102,15 @@ class VirtualTryOn {
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       this.videoElement.srcObject = stream;
 
+      // Set explicit video dimensions
+      this.videoElement.width = isMobile ? window.screen.width : 640;
+      this.videoElement.height = isMobile ? window.screen.height : 480;
+
       return new Promise((resolve) => {
         const checkReady = () => {
           if (
-            this.videoElement.videoWidth > 0 &&
-            this.videoElement.videoHeight > 0
+            this.videoElement.videoWidth > 10 && // Minimum 10px check
+            this.videoElement.videoHeight > 10
           ) {
             this.outputCanvas.width = this.videoElement.videoWidth;
             this.outputCanvas.height = this.videoElement.videoHeight;
@@ -138,27 +143,12 @@ class VirtualTryOn {
       this.isProcessing = true;
       this.syncCanvasToVideo();
 
-      // Clear canvas
-      this.ctx.clearRect(
-        0,
-        0,
-        this.outputCanvas.width,
-        this.outputCanvas.height
-      );
-
-      // Draw camera feed
-      this.ctx.drawImage(
-        this.videoElement,
-        0,
-        0,
-        this.outputCanvas.width,
-        this.outputCanvas.height
-      );
-
+      // Don't draw immediately - prepare everything first
       if (this.tryOnActive && this.clothingImage?.complete) {
         try {
+          // Use video element for segmentation
           const segmentation = await this.net.segmentPersonParts(
-            this.outputCanvas,
+            this.videoElement,
             {
               segmentationThreshold: 0.7,
               flipHorizontal: true,
@@ -167,6 +157,22 @@ class VirtualTryOn {
             }
           );
 
+          // Create an offscreen canvas for compositing
+          const offscreenCanvas = document.createElement("canvas");
+          offscreenCanvas.width = this.outputCanvas.width;
+          offscreenCanvas.height = this.outputCanvas.height;
+          const offscreenCtx = offscreenCanvas.getContext("2d");
+
+          // First draw video feed to offscreen canvas
+          offscreenCtx.drawImage(
+            this.videoElement,
+            0,
+            0,
+            offscreenCanvas.width,
+            offscreenCanvas.height
+          );
+
+          // Then apply the mask if segmentation was successful
           if (
             segmentation?.data &&
             segmentation.width > 0 &&
@@ -176,27 +182,70 @@ class VirtualTryOn {
             const opacity = 0.7;
             const maskBlurAmount = 3;
 
-            console.log(coloredPartImage)
-            
+            // Apply mask to the offscreen canvas
             bodyPix.drawMask(
-              this.outputCanvas,
-              this.outputCanvas,
+              offscreenCanvas,
+              offscreenCanvas,
               coloredPartImage,
               opacity,
               maskBlurAmount
             );
+
+            // Clean up
+            tf.dispose(coloredPartImage);
           }
+
+          // Finally, draw the completed offscreen canvas to the visible canvas in one operation
+          this.ctx.clearRect(
+            0,
+            0,
+            this.outputCanvas.width,
+            this.outputCanvas.height
+          );
+          this.ctx.drawImage(offscreenCanvas, 0, 0);
         } catch (segError) {
           console.warn("Segmentation error:", segError);
+          // If segmentation fails, draw just the video
+          this.ctx.clearRect(
+            0,
+            0,
+            this.outputCanvas.width,
+            this.outputCanvas.height
+          );
+          this.ctx.drawImage(
+            this.videoElement,
+            0,
+            0,
+            this.outputCanvas.width,
+            this.outputCanvas.height
+          );
         }
+      } else {
+        // Just draw the video if try-on is inactive
+        this.ctx.clearRect(
+          0,
+          0,
+          this.outputCanvas.width,
+          this.outputCanvas.height
+        );
+        this.ctx.drawImage(
+          this.videoElement,
+          0,
+          0,
+          this.outputCanvas.width,
+          this.outputCanvas.height
+        );
       }
     } catch (error) {
       console.error("Frame processing failed:", error);
     } finally {
       this.isProcessing = false;
-      this.animationFrameId = requestAnimationFrame(
-        this.processFrame.bind(this)
-      );
+      // Throttle processing to ~25fps for better stability
+      setTimeout(() => {
+        this.animationFrameId = requestAnimationFrame(
+          this.processFrame.bind(this)
+        );
+      }, 40);
     }
   }
 
@@ -263,6 +312,10 @@ class VirtualTryOn {
     }
     if (this.videoElement.srcObject) {
       this.videoElement.srcObject.getTracks().forEach((track) => track.stop());
+    }
+    // Clean up TensorFlow.js memory
+    if (this.net) {
+      tf.disposeVariables();
     }
   }
 }
