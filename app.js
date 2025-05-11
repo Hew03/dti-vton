@@ -1,0 +1,370 @@
+class VirtualTryOn {
+  constructor() {
+    this.net = null;
+    this.videoElement = document.getElementById("camera-feed");
+    this.outputCanvas = document.getElementById("output-canvas");
+    this.ctx = this.outputCanvas.getContext("2d");
+    this.loadingOverlay = document.getElementById("loading-overlay");
+    this.clothingImage = null;
+    this.tryOnActive = false;
+    this.animationFrameId = null;
+    this.isProcessing = false;
+    this.cameraReady = false;
+
+    // UI Elements
+    this.statusElement = document.getElementById("status");
+    this.clothingPreview = document.getElementById("clothing-preview");
+    this.tryOnButton = document.getElementById("try-on-btn");
+    this.resetButton = document.getElementById("reset-btn");
+    this.clothingUpload = document.getElementById("clothing-upload");
+
+    // Event listeners
+    this.tryOnButton.addEventListener("click", this.toggleTryOn.bind(this));
+    this.resetButton.addEventListener("click", this.reset.bind(this));
+    this.clothingUpload.addEventListener(
+      "change",
+      this.handleClothingUpload.bind(this)
+    );
+
+    this.init();
+  }
+
+  async init() {
+    try {
+      this.showLoading(true);
+      this.updateStatus("Loading models...", "warning");
+
+      // Load BodyPix model
+      this.net = await bodyPix.load({
+        architecture: "MobileNetV1",
+        outputStride: 16,
+        quantBytes: 2,
+        internalResolution: "medium",
+      });
+
+      // Start camera
+      await this.startCamera();
+      this.cameraReady = true;
+
+      this.updateStatus("Ready", "ready");
+      this.showLoading(false);
+      this.processFrame();
+    } catch (error) {
+      console.error("Initialization error:", error);
+      this.updateStatus("Failed to initialize: " + error, "error");
+      this.showLoading(false);
+
+      // Fallback to static image mode if camera fails
+      this.videoElement.style.display = "none";
+      this.outputCanvas.style.background = "#333";
+      this.ctx.fillStyle = "white";
+      this.ctx.textAlign = "center";
+      this.ctx.fillText(
+        "Camera initialization failed",
+        this.outputCanvas.width / 2,
+        this.outputCanvas.height / 2
+      );
+    }
+  }
+
+  isVideoReady() {
+    return (
+      this.cameraReady &&
+      this.videoElement.videoWidth > 0 &&
+      this.videoElement.videoHeight > 0 &&
+      this.outputCanvas.width > 0 &&
+      this.outputCanvas.height > 0
+    );
+  }
+
+  syncCanvasToVideo() {
+    if (
+      this.videoElement.videoWidth !== this.outputCanvas.width ||
+      this.videoElement.videoHeight !== this.outputCanvas.height
+    ) {
+      this.outputCanvas.width = this.videoElement.videoWidth;
+      this.outputCanvas.height = this.videoElement.videoHeight;
+    }
+  }
+  
+  async startCamera() {
+    try {
+      const isMobile = /Mobi|Android/i.test(navigator.userAgent);
+      const constraints = {
+        video: {
+          facingMode: "user",
+          width: isMobile ? { ideal: window.screen.width } : { ideal: 640 },
+          height: isMobile ? { ideal: window.screen.height } : { ideal: 480 },
+        },
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      this.videoElement.srcObject = stream;
+
+      return new Promise((resolve) => {
+        const checkReady = () => {
+          if (
+            this.videoElement.videoWidth > 0 &&
+            this.videoElement.videoHeight > 0
+          ) {
+            this.outputCanvas.width = this.videoElement.videoWidth;
+            this.outputCanvas.height = this.videoElement.videoHeight;
+            resolve();
+          } else {
+            setTimeout(checkReady, 100);
+          }
+        };
+        this.videoElement.onloadedmetadata = () => {
+          checkReady();
+        };
+        checkReady();
+      });
+    } catch (error) {
+      console.error("Camera error:", error);
+      this.updateStatus("Camera access denied", "error");
+      throw error;
+    }
+  }
+
+  async processFrame() {
+    if (this.isProcessing || !this.isVideoReady()) {
+      this.animationFrameId = requestAnimationFrame(
+        this.processFrame.bind(this)
+      );
+      return;
+    }
+
+    try {
+      this.isProcessing = true;
+      this.syncCanvasToVideo();
+
+      // Clear canvas
+      this.ctx.clearRect(
+        0,
+        0,
+        this.outputCanvas.width,
+        this.outputCanvas.height
+      );
+
+      // Draw camera feed
+      this.ctx.drawImage(
+        this.videoElement,
+        0,
+        0,
+        this.outputCanvas.width,
+        this.outputCanvas.height
+      );
+
+      if (this.tryOnActive && this.clothingImage?.complete) {
+        try {
+          const segmentation = await this.net.segmentPersonParts(
+            this.outputCanvas,
+            {
+              segmentationThreshold: 0.7,
+              flipHorizontal: true,
+              internalResolution: "medium",
+              maxDetections: 1,
+            }
+          );
+
+          if (
+            segmentation?.data &&
+            segmentation.width > 0 &&
+            segmentation.height > 0
+          ) {
+            // Visualize segmentation mask
+            if (this.showSegmentationOverlay) {
+              this.drawSegmentationMask(segmentation);
+            }
+
+            // Original clothing warp
+            this.applyClothingWarp(segmentation);
+          }
+        } catch (segError) {
+          console.warn("Segmentation error:", segError);
+        }
+      }
+    } catch (error) {
+      console.error("Frame processing failed:", error);
+    } finally {
+      this.isProcessing = false;
+      this.animationFrameId = requestAnimationFrame(
+        this.processFrame.bind(this)
+      );
+    }
+  }
+
+  // Add this new method to your class
+  drawSegmentationMask(segmentation) {
+    // Create temporary canvas for visualization
+    const tempCanvas = document.createElement("canvas");
+    tempCanvas.width = segmentation.width;
+    tempCanvas.height = segmentation.height;
+    const tempCtx = tempCanvas.getContext("2d");
+
+    // Create image data from segmentation mask
+    const imgData = tempCtx.createImageData(
+      segmentation.width,
+      segmentation.height
+    );
+    const data = imgData.data;
+
+    // Color mapping for body parts (example values - adjust based on your model)
+    const BODY_PART_COLORS = {
+      0: [0, 0, 0, 0], // Background
+      1: [255, 0, 0, 100], // Torso (red)
+      2: [0, 255, 0, 100], // Head (green)
+      3: [0, 0, 255, 100], // Arms (blue)
+      // ... add more colors for other body parts
+    };
+
+    // Colorize segmentation mask
+    for (let i = 0; i < segmentation.data.length; i++) {
+      const partId = segmentation.data[i];
+      const color = BODY_PART_COLORS[partId] || [255, 255, 255, 50]; // Default
+      const offset = i * 4;
+      data[offset] = color[0]; // R
+      data[offset + 1] = color[1]; // G
+      data[offset + 2] = color[2]; // B
+      data[offset + 3] = color[3]; // A
+    }
+
+    // Put image data to temp canvas
+    tempCtx.putImageData(imgData, 0, 0);
+
+    // Draw overlay on main canvas
+    this.ctx.globalAlpha = 0.5; // Semi-transparent overlay
+    this.ctx.drawImage(
+      tempCanvas,
+      0,
+      0,
+      this.outputCanvas.width,
+      this.outputCanvas.height
+    );
+    this.ctx.globalAlpha = 1.0; // Reset alpha
+
+    // Clean up if using tensor data
+    if (segmentation.dispose) segmentation.dispose();
+  }
+
+  applyClothingWarp(segmentation) {
+    const { data: partData, width, height } = segmentation;
+
+    // Find torso area
+    const torsoPixels = [];
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const partId = partData[y * width + x];
+        // Torso parts are 12 (torso_front) and 23 (torso_back) in BodyPix
+        if (partId === 12 || partId === 23) {
+          torsoPixels.push({ x, y });
+        }
+      }
+    }
+
+    if (torsoPixels.length === 0) return;
+
+    // Calculate torso bounds
+    const minX = Math.min(...torsoPixels.map((p) => p.x));
+    const maxX = Math.max(...torsoPixels.map((p) => p.x));
+    const minY = Math.min(...torsoPixels.map((p) => p.y));
+    const maxY = Math.max(...torsoPixels.map((p) => p.y));
+
+    const torsoWidth = maxX - minX;
+    const torsoHeight = maxY - minY;
+
+    if (torsoWidth <= 0 || torsoHeight <= 0) return;
+
+    // Scale clothing to fit torso
+    const scaleX = torsoWidth / this.clothingImage.width;
+    const scaleY = torsoHeight / this.clothingImage.height;
+    const scale = Math.min(scaleX, scaleY) * 0.9; // Slightly smaller than torso
+
+    const clothingWidth = this.clothingImage.width * scale;
+    const clothingHeight = this.clothingImage.height * scale;
+
+    // Position clothing
+    const x = minX + (torsoWidth - clothingWidth) / 2;
+    const y = minY + (torsoHeight - clothingHeight) / 2;
+
+    // Draw clothing
+    this.ctx.globalCompositeOperation = "source-over";
+    this.ctx.drawImage(this.clothingImage, x, y, clothingWidth, clothingHeight);
+  }
+
+  handleClothingUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        this.clothingImage = img;
+        this.clothingPreview.innerHTML = "";
+        this.clothingPreview.appendChild(img);
+        this.tryOnButton.disabled = false;
+        this.updateStatus("Clothing loaded", "ready");
+      };
+      img.onerror = () => {
+        this.clothingPreview.innerHTML = "<span>Error loading image</span>";
+        this.updateStatus("Invalid image file", "error");
+      };
+      img.src = e.target.result;
+    };
+    reader.onerror = () => {
+      this.clothingPreview.innerHTML = "<span>Error reading file</span>";
+      this.updateStatus("File read error", "error");
+    };
+    reader.readAsDataURL(file);
+  }
+
+  toggleTryOn() {
+    this.tryOnActive = !this.tryOnActive;
+    if (this.tryOnActive) {
+      this.tryOnButton.textContent = "Show Original";
+      this.updateStatus("Try-on active", "ready");
+    } else {
+      this.tryOnButton.textContent = "Apply Try-On";
+      this.updateStatus("Ready", "ready");
+    }
+  }
+
+  reset() {
+    this.tryOnActive = false;
+    this.clothingImage = null;
+    this.clothingPreview.innerHTML = "<span>No clothing selected</span>";
+    this.tryOnButton.textContent = "Apply Try-On";
+    this.tryOnButton.disabled = true;
+    this.clothingUpload.value = "";
+    this.updateStatus("Ready", "ready");
+  }
+
+  updateStatus(message, type) {
+    this.statusElement.textContent = message;
+    this.statusElement.className = `status status-${type}`;
+  }
+
+  showLoading(show) {
+    this.loadingOverlay.style.display = show ? "flex" : "none";
+  }
+
+  cleanup() {
+    if (this.animationFrameId) {
+      cancelAnimationFrame(this.animationFrameId);
+    }
+    if (this.videoElement.srcObject) {
+      this.videoElement.srcObject.getTracks().forEach((track) => track.stop());
+    }
+  }
+}
+
+// Initialize application when DOM is loaded
+document.addEventListener("DOMContentLoaded", () => {
+  const app = new VirtualTryOn();
+
+  // Cleanup on exit
+  window.addEventListener("beforeunload", () => {
+    app.cleanup();
+  });
+});
