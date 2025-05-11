@@ -86,7 +86,7 @@ class VirtualTryOn {
       this.outputCanvas.height = this.videoElement.videoHeight;
     }
   }
-  
+
   async startCamera() {
     try {
       const isMobile = /Mobi|Android/i.test(navigator.userAgent);
@@ -172,13 +172,19 @@ class VirtualTryOn {
             segmentation.width > 0 &&
             segmentation.height > 0
           ) {
-            // Visualize segmentation mask
-            if (this.showSegmentationOverlay) {
-              this.drawSegmentationMask(segmentation);
-            }
+            const coloredPartImage = bodyPix.toColoredPartMask(segmentation);
+            const opacity = 0.7;
+            const maskBlurAmount = 3;
 
-            // Original clothing warp
-            this.applyClothingWarp(segmentation);
+            console.log(coloredPartImage)
+            
+            bodyPix.drawMask(
+              this.outputCanvas,
+              this.outputCanvas,
+              coloredPartImage,
+              opacity,
+              maskBlurAmount
+            );
           }
         } catch (segError) {
           console.warn("Segmentation error:", segError);
@@ -192,104 +198,6 @@ class VirtualTryOn {
         this.processFrame.bind(this)
       );
     }
-  }
-
-  // Add this new method to your class
-  drawSegmentationMask(segmentation) {
-    // Create temporary canvas for visualization
-    const tempCanvas = document.createElement("canvas");
-    tempCanvas.width = segmentation.width;
-    tempCanvas.height = segmentation.height;
-    const tempCtx = tempCanvas.getContext("2d");
-
-    // Create image data from segmentation mask
-    const imgData = tempCtx.createImageData(
-      segmentation.width,
-      segmentation.height
-    );
-    const data = imgData.data;
-
-    // Color mapping for body parts (example values - adjust based on your model)
-    const BODY_PART_COLORS = {
-      0: [0, 0, 0, 0], // Background
-      1: [255, 0, 0, 100], // Torso (red)
-      2: [0, 255, 0, 100], // Head (green)
-      3: [0, 0, 255, 100], // Arms (blue)
-      // ... add more colors for other body parts
-    };
-
-    // Colorize segmentation mask
-    for (let i = 0; i < segmentation.data.length; i++) {
-      const partId = segmentation.data[i];
-      const color = BODY_PART_COLORS[partId] || [255, 255, 255, 50]; // Default
-      const offset = i * 4;
-      data[offset] = color[0]; // R
-      data[offset + 1] = color[1]; // G
-      data[offset + 2] = color[2]; // B
-      data[offset + 3] = color[3]; // A
-    }
-
-    // Put image data to temp canvas
-    tempCtx.putImageData(imgData, 0, 0);
-
-    // Draw overlay on main canvas
-    this.ctx.globalAlpha = 0.5; // Semi-transparent overlay
-    this.ctx.drawImage(
-      tempCanvas,
-      0,
-      0,
-      this.outputCanvas.width,
-      this.outputCanvas.height
-    );
-    this.ctx.globalAlpha = 1.0; // Reset alpha
-
-    // Clean up if using tensor data
-    if (segmentation.dispose) segmentation.dispose();
-  }
-
-  applyClothingWarp(segmentation) {
-    const { data: partData, width, height } = segmentation;
-
-    // Find torso area
-    const torsoPixels = [];
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const partId = partData[y * width + x];
-        // Torso parts are 12 (torso_front) and 23 (torso_back) in BodyPix
-        if (partId === 12 || partId === 23) {
-          torsoPixels.push({ x, y });
-        }
-      }
-    }
-
-    if (torsoPixels.length === 0) return;
-
-    // Calculate torso bounds
-    const minX = Math.min(...torsoPixels.map((p) => p.x));
-    const maxX = Math.max(...torsoPixels.map((p) => p.x));
-    const minY = Math.min(...torsoPixels.map((p) => p.y));
-    const maxY = Math.max(...torsoPixels.map((p) => p.y));
-
-    const torsoWidth = maxX - minX;
-    const torsoHeight = maxY - minY;
-
-    if (torsoWidth <= 0 || torsoHeight <= 0) return;
-
-    // Scale clothing to fit torso
-    const scaleX = torsoWidth / this.clothingImage.width;
-    const scaleY = torsoHeight / this.clothingImage.height;
-    const scale = Math.min(scaleX, scaleY) * 0.9; // Slightly smaller than torso
-
-    const clothingWidth = this.clothingImage.width * scale;
-    const clothingHeight = this.clothingImage.height * scale;
-
-    // Position clothing
-    const x = minX + (torsoWidth - clothingWidth) / 2;
-    const y = minY + (torsoHeight - clothingHeight) / 2;
-
-    // Draw clothing
-    this.ctx.globalCompositeOperation = "source-over";
-    this.ctx.drawImage(this.clothingImage, x, y, clothingWidth, clothingHeight);
   }
 
   handleClothingUpload(event) {
